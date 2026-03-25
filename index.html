@@ -257,6 +257,7 @@ body::before {
   text-transform: uppercase; letter-spacing: 0.5px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+.tr-plays { font-size: 9px; color: var(--muted); margin-top: 2px; }
 .track-row.active .tr-name { color: var(--white); }
 
 /* FOOTER */
@@ -364,18 +365,64 @@ body::before {
 </div>
 
 <audio id="audio"></audio>
-<script>
+
+<!-- Firebase Modular SDK -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-app.js";
+import { getFirestore, collection, onSnapshot, doc, getDoc, setDoc, updateDoc, increment } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
+import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-analytics.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDheIib2aTWoDb61cHTyst0klpPNT0_t88",
+  authDomain: "olympicsongs-c40e6.firebaseapp.com",
+  projectId: "olympicsongs-c40e6",
+  storageBucket: "olympicsongs-c40e6.firebasestorage.app",
+  messagingSenderId: "298254432309",
+  appId: "1:298254432309:web:3f8c3883ed805bb689997c",
+  measurementId: "G-G509XXKM2S"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const analytics = getAnalytics(app);
+
 const tracks = [
-  {file:'aguilas.mp3',    name:'Águilas',    emoji:'🦅'},
-  {file:'caimanes.mp3',   name:'Caimanes',   emoji:'🐊'},
-  {file:'guacamayas.mp3', name:'Guacamayas', emoji:'🦜'},
-  {file:'innova.mp3',     name:'Innova',     emoji:'⭐'},
-  {file:'jaguares.mp3',   name:'Jaguares',   emoji:'🐆'},
-  {file:'lobos.mp3',      name:'Lobos',      emoji:'🐺'},
-  {file:'quetzales.mp3',  name:'Quetzales',  emoji:'🌿'},
-  {file:'serpientes.mp3', name:'Serpientes', emoji:'🐍'},
-  {file:'xolos.mp3',      name:'Xolos',      emoji:'🐕'},
+  {id:'aguilas',    file:'aguilas.mp3',    name:'Águilas',    emoji:'🦅'},
+  {id:'caimanes',   file:'caimanes.mp3',   name:'Caimanes',   emoji:'🐊'},
+  {id:'guacamayas', file:'guacamayas.mp3', name:'Guacamayas', emoji:'🦜'},
+  {id:'innova',     file:'innova.mp3',     name:'Innova',     emoji:'⭐'},
+  {id:'jaguares',   file:'jaguares.mp3',   name:'Jaguares',   emoji:'🐆'},
+  {id:'lobos',      file:'lobos.mp3',      name:'Lobos',      emoji:'🐺'},
+  {id:'quetzales',  file:'quetzales.mp3',  name:'Quetzales',  emoji:'🌿'},
+  {id:'serpientes', file:'serpientes.mp3', name:'Serpientes', emoji:'🐍'},
+  {id:'xolos',      file:'xolos.mp3',      name:'Xolos',      emoji:'🐕'},
 ];
+
+let playCounts = {};
+
+function syncPlayCounts() {
+  onSnapshot(collection(db, "plays"), (snapshot) => {
+    snapshot.forEach((doc) => {
+      playCounts[doc.id] = doc.data().count || 0;
+    });
+    renderPlaylist();
+  });
+}
+
+async function incrementPlay(trackId) {
+  const docRef = doc(db, "plays", trackId);
+  try {
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      await updateDoc(docRef, { count: increment(1) });
+    } else {
+      await setDoc(docRef, { count: 1 });
+    }
+  } catch (err) {
+    console.error("Firebase error:", err);
+  }
+}
+
 const audio=document.getElementById('audio'),medalOuter=document.getElementById('medalOuter'),
   medalEmoji=document.getElementById('medalEmoji'),trackTitle=document.getElementById('trackTitle'),
   trackSub=document.getElementById('trackSub'),elapsed=document.getElementById('elapsed'),
@@ -388,6 +435,7 @@ const audio=document.getElementById('audio'),medalOuter=document.getElementById(
 let cur=0, playing=false, vol=0.8;
 audio.volume=vol;
 const fmt=s=>(!s||isNaN(s))?'0:00':`${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`;
+
 function loadTrack(i,auto=false){
   cur=i; const t=tracks[i];
   audio.src=t.file;
@@ -396,15 +444,33 @@ function loadTrack(i,auto=false){
   medalEmoji.textContent=t.emoji;
   progFill.style.width='0%'; elapsed.textContent='0:00'; durEl.textContent='0:00';
   renderPlaylist();
-  if(auto){audio.play();setPlaying(true);}else setPlaying(false);
+  if(auto){
+    audio.play();
+    setPlaying(true);
+    incrementPlay(t.id);
+  } else setPlaying(false);
 }
+
+window.loadTrack = loadTrack; // Expose to global for HTML event listeners if any
+
 function setPlaying(s){
   playing=s; btnPlay.textContent=s?'⏸':'▶';
   medalOuter.classList.toggle('playing',s);
   pulseDot.style.background=s?'var(--gold)':'var(--muted)';
   renderPlaylist();
 }
-btnPlay.addEventListener('click',()=>{ if(playing){audio.pause();setPlaying(false);}else{audio.play();setPlaying(true);} });
+
+btnPlay.addEventListener('click',()=>{ 
+  if(playing){
+    audio.pause();
+    setPlaying(false);
+  }else{
+    audio.play();
+    setPlaying(true);
+    incrementPlay(tracks[cur].id);
+  } 
+});
+
 btnPrev.addEventListener('click',()=>loadTrack((cur-1+tracks.length)%tracks.length,playing));
 btnNext.addEventListener('click',()=>loadTrack((cur+1)%tracks.length,playing));
 audio.addEventListener('ended',()=>loadTrack((cur+1)%tracks.length,true));
@@ -423,6 +489,7 @@ volTrack.addEventListener('click',e=>{
   audio.volume=vol; volFill.style.width=(vol*100)+'%';
   volIcon.textContent=vol===0?'🔇':vol<0.4?'🔉':'🔊';
 });
+
 function renderPlaylist(){
   playlist.innerHTML='';
   tracks.forEach((t,i)=>{
@@ -431,12 +498,17 @@ function renderPlaylist(){
     const num=(i===cur&&playing)
       ?`<div class="eq-bars"><div class="eq-b"></div><div class="eq-b"></div><div class="eq-b"></div></div>`
       :`<span class="tr-num">${i+1}</span>`;
-    row.innerHTML=`${num}<div class="tr-emoji">${t.emoji}</div><div class="tr-info"><div class="tr-name">${t.name}</div></div>`;
+    
+    const count = playCounts[t.id] || 0;
+    
+    row.innerHTML=`${num}<div class="tr-emoji">${t.emoji}</div><div class="tr-info"><div class="tr-name">${t.name}</div><div class="tr-plays">${count} PLAYS</div></div>`;
     row.addEventListener('click',()=>loadTrack(i,true));
     playlist.appendChild(row);
   });
   playlist.querySelector('.active')?.scrollIntoView({block:'nearest',behavior:'smooth'});
 }
+
+syncPlayCounts();
 loadTrack(0);
 </script>
 </body>
