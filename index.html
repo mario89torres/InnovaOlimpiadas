@@ -368,9 +368,9 @@ body::before {
 
 <!-- Firebase Modular SDK -->
 <script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-app.js";
-import { getFirestore, collection, onSnapshot, doc, getDoc, setDoc, updateDoc, increment } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
-import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-analytics.js";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
+import { getFirestore, collection, onSnapshot, doc, getDoc, setDoc, updateDoc, increment } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
+import { getAnalytics, isSupported } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-analytics.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDheIib2aTWoDb61cHTyst0klpPNT0_t88",
@@ -384,7 +384,11 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
-const analytics = getAnalytics(app);
+
+// Initialize Analytics optionally
+isSupported().then(supported => {
+  if (supported) getAnalytics(app);
+}).catch(err => console.warn("Analytics not supported:", err));
 
 const tracks = [
   {id:'aguilas',    file:'aguilas.mp3',    name:'Águilas',    emoji:'🦅'},
@@ -412,12 +416,12 @@ function syncPlayCounts() {
 async function incrementPlay(trackId) {
   const docRef = doc(db, "plays", trackId);
   try {
-    const docSnap = await getDoc(docRef);
-    if (docSnap.exists()) {
-      await updateDoc(docRef, { count: increment(1) });
-    } else {
-      await setDoc(docRef, { count: 1 });
-    }
+    // Atomic increment: works even if doc doesn't exist (with merge:true)
+    await setDoc(docRef, { count: increment(1) }, { merge: true });
+    
+    // Optimistic UI update
+    playCounts[trackId] = (playCounts[trackId] || 0) + 1;
+    renderPlaylist();
   } catch (err) {
     console.error("Firebase error:", err);
   }
